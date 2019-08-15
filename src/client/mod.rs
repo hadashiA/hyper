@@ -190,6 +190,7 @@ where C: Connect + Sync + 'static,
     pub fn get(&self, uri: Uri) -> ResponseFuture
     where
         B: Default,
+        B::Data: Unpin,
     {
         let body = B::default();
         if !body.is_end_stream() {
@@ -223,7 +224,7 @@ where C: Connect + Sync + 'static,
     /// # }
     /// # fn main() {}
     /// ```
-    pub fn request(&self, mut req: Request<B>) -> ResponseFuture {
+    pub fn request(&self, mut req: Request<B>) -> ResponseFuture where B::Data: Unpin {
         let is_http_connect = req.method() == &Method::CONNECT;
         match req.version() {
             Version::HTTP_11 => (),
@@ -249,7 +250,12 @@ where C: Connect + Sync + 'static,
         ResponseFuture::new(Box::new(self.retryably_send_request(req, pool_key)))
     }
 
-    fn retryably_send_request(&self, req: Request<B>, pool_key: PoolKey) -> impl Future<Output=crate::Result<Response<Body>>> {
+    fn retryably_send_request(
+        &self, req: Request<B>, pool_key: PoolKey
+    ) -> impl Future<Output=crate::Result<Response<Body>>>
+    where
+        B::Data: Unpin
+    {
         let client = self.clone();
         let uri = req.uri().clone();
 
@@ -277,7 +283,14 @@ where C: Connect + Sync + 'static,
         })
     }
 
-    fn send_request(&self, mut req: Request<B>, pool_key: PoolKey) -> impl Future<Output=Result<Response<Body>, ClientError<B>>> + Unpin {
+    fn send_request(
+        &self,
+        mut req: Request<B>,
+        pool_key: PoolKey
+    ) -> impl Future<Output=Result<Response<Body>, ClientError<B>>> + Unpin
+    where
+        B::Data: Unpin,
+    {
         let conn = self.connection_for(req.uri().clone(), pool_key);
 
         let set_host = self.config.set_host;
@@ -385,8 +398,12 @@ where C: Connect + Sync + 'static,
         })
     }
 
-    fn connection_for(&self, uri: Uri, pool_key: PoolKey)
-        -> impl Future<Output=Result<Pooled<PoolClient<B>>, ClientError<B>>>
+    fn connection_for(
+        &self,
+        uri: Uri,
+        pool_key: PoolKey
+    ) -> impl Future<Output=Result<Pooled<PoolClient<B>>, ClientError<B>>>
+    where B::Data: Unpin,
     {
         // This actually races 2 different futures to try to get a ready
         // connection the fastest, and to reduce connection churn.
@@ -464,8 +481,12 @@ where C: Connect + Sync + 'static,
             })
     }
 
-    fn connect_to(&self, uri: Uri, pool_key: PoolKey)
-        -> impl Lazy<Output=crate::Result<Pooled<PoolClient<B>>>> + Unpin
+    fn connect_to(
+        &self,
+        uri: Uri,
+        pool_key: PoolKey
+    ) -> impl Lazy<Output=crate::Result<Pooled<PoolClient<B>>>> + Unpin
+    where B::Data: Unpin,
     {
         let executor = self.conn_builder.exec.clone();
         let pool = self.pool.clone();
